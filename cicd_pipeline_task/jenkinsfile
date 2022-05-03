@@ -1,0 +1,65 @@
+pipeline {
+    agent any
+    tools {
+        "org.jenkinsci.plugins.terraform.TerraformInstallation" "terraform"
+    }
+    parameters {
+        string(name: 'WORKSPACE', defaultValue: 'development', description:'setting up workspace for terraform')
+    }
+    environment {
+        ACCESS_KEY = credentials('AWS_ACCESS_KEY_ID')
+        SECRET_KEY = credentials('AWS_SECRET_ACCESS_KEY')
+    }
+    stages {
+            stage('TerraformInit'){
+            steps {
+                dir('devops-challenge/terraform-task/'){
+                    sh "terraform init -input=false"
+                    sh "echo \$PWD"
+                    sh "whoami"
+                }
+            }
+        }
+
+        stage('TerraformValidate'){
+            steps {
+                dir('devops-challenge/terraform-task/'){
+                    sh "terraform validate"
+                }
+            }
+        }
+
+        stage('TerraformPlan'){
+            steps {
+                dir('devops-challenge/terraform-task/'){
+                    script {
+                        sh "terraform plan -var 'access_key=$ACCESS_KEY' -var 'secret_key=$SECRET_KEY' \
+                        -out terraform.tfplan;echo \$? > status"
+                        stash name: "terraform-plan", includes: "terraform.tfplan"
+                    }
+                }
+            }
+        }
+        
+        stage('TerraformApply'){
+            steps {
+                script{
+                    def apply = false
+                    try {
+                        input message: 'Can you please confirm the apply', ok: 'Ready to Apply the Config'
+                        apply = true
+                    } catch (err) {
+                        apply = false
+                         currentBuild.result = 'UNSTABLE'
+                    }
+                    if(apply){
+                        dir('devops-challenge/terraform-task/'){
+                            unstash "terraform-plan"
+                            sh 'terraform apply terraform.tfplan' 
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
